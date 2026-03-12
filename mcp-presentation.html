@@ -1,0 +1,1483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Implementing an MCP Server for AI Tool Integration</title>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:ital,wght@0,400;0,500;0,700;0,800;0,900;1,400&family=Nunito:wght@300;400;600;700&display=swap" rel="stylesheet">
+
+<style>
+/* ===========================================
+   CSS CUSTOM PROPERTIES — SWISS MODERN THEME
+   Edit these variables to restyle the entire deck
+   =========================================== */
+:root {
+  --bg-white:    #ffffff;
+  --bg-light:    #f5f5f5;
+  --bg-dark:     #0a0a0a;
+  --text-primary:#0a0a0a;
+  --text-muted:  rgba(10,10,10,0.45);
+  --text-light:  rgba(10,10,10,0.65);
+  --accent:      #ff3300;
+  --accent-pale: rgba(255,51,0,0.08);
+  --border:      rgba(10,10,10,0.12);
+  --border-strong: #0a0a0a;
+
+  --font-display: 'Archivo', sans-serif;
+  --font-body:    'Nunito', sans-serif;
+
+  /* Viewport-relative sizing (clamp is mandatory) */
+  --title-size:    clamp(1.5rem, 5vw, 4rem);
+  --h2-size:       clamp(1.25rem, 3.5vw, 2.5rem);
+  --h3-size:       clamp(1rem, 2.5vw, 1.75rem);
+  --body-size:     clamp(0.75rem, 1.4vw, 1.05rem);
+  --small-size:    clamp(0.6rem, 0.9vw, 0.75rem);
+  --label-size:    clamp(0.5rem, 0.75vw, 0.65rem);
+
+  --slide-padding: clamp(1rem, 4vw, 4rem);
+  --content-gap:   clamp(0.5rem, 2vw, 2rem);
+  --element-gap:   clamp(0.3rem, 1vw, 0.9rem);
+
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ===========================================
+   VIEWPORT FITTING — MANDATORY BASE STYLES
+   =========================================== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  overflow-x: hidden;
+}
+html {
+  scroll-snap-type: y mandatory;
+  scroll-behavior: smooth;
+}
+
+.slide {
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  scroll-snap-align: start;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  background: var(--bg-white);
+  font-family: var(--font-body);
+  color: var(--text-primary);
+}
+
+.slide-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  max-height: 100%;
+  overflow: hidden;
+  padding: var(--slide-padding);
+}
+
+.card, .container, .content-box {
+  max-width: min(90vw, 1000px);
+  max-height: min(80vh, 700px);
+}
+
+.feature-list, .bullet-list {
+  gap: clamp(0.4rem, 1vh, 1rem);
+}
+.feature-list li, .bullet-list li {
+  font-size: var(--body-size);
+  line-height: 1.4;
+}
+
+img, .image-container {
+  max-width: 100%;
+  max-height: min(50vh, 400px);
+  object-fit: contain;
+}
+
+/* Responsive breakpoints */
+@media (max-height: 700px) {
+  :root {
+    --slide-padding: clamp(0.75rem, 3vw, 2rem);
+    --content-gap: clamp(0.4rem, 1.5vw, 1rem);
+    --title-size: clamp(1.25rem, 4.5vw, 2.5rem);
+    --h2-size: clamp(1rem, 3vw, 1.75rem);
+  }
+}
+@media (max-height: 600px) {
+  :root {
+    --slide-padding: clamp(0.5rem, 2.5vw, 1.5rem);
+    --content-gap: clamp(0.3rem, 1vw, 0.75rem);
+    --title-size: clamp(1.1rem, 4vw, 2rem);
+    --body-size: clamp(0.7rem, 1.2vw, 0.95rem);
+  }
+  .nav-dots, .keyboard-hint, .decorative { display: none; }
+}
+@media (max-height: 500px) {
+  :root {
+    --slide-padding: clamp(0.4rem, 2vw, 1rem);
+    --title-size: clamp(1rem, 3.5vw, 1.5rem);
+    --h2-size: clamp(0.9rem, 2.5vw, 1.25rem);
+    --body-size: clamp(0.65rem, 1vw, 0.85rem);
+  }
+}
+@media (max-width: 600px) {
+  :root { --title-size: clamp(1.25rem, 7vw, 2.5rem); }
+  .grid { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.2s !important;
+  }
+  html { scroll-behavior: auto; }
+}
+
+/* ===========================================
+   SWISS MODERN SHARED COMPONENTS
+   =========================================== */
+
+/* Visible grid overlay on every slide */
+.slide::before {
+  content: '';
+  position: absolute; inset: 0;
+  background-image:
+    linear-gradient(var(--border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border) 1px, transparent 1px);
+  background-size: calc(100vw / 12) calc(100vh / 8);
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.5;
+}
+
+/* Header bar */
+.slide-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: clamp(0.75rem,1.8vw,1.8rem) var(--slide-padding);
+  border-bottom: 2px solid var(--border-strong);
+  flex-shrink: 0;
+  position: relative; z-index: 2;
+  background: var(--bg-white);
+}
+
+.brand {
+  display: flex; align-items: center; gap: 0.6rem;
+}
+.brand-square {
+  width: clamp(14px,2vw,22px); height: clamp(14px,2vw,22px);
+  background: var(--accent);
+  flex-shrink: 0;
+}
+.brand-text {
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-size: var(--label-size);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-primary);
+}
+
+.header-right {
+  font-size: var(--label-size);
+  color: var(--text-muted);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* Footer bar */
+.slide-footer {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: clamp(0.5rem,1.2vw,1.2rem) var(--slide-padding);
+  border-top: 2px solid var(--border-strong);
+  flex-shrink: 0;
+  position: relative; z-index: 2;
+  background: var(--bg-white);
+}
+
+.page-indicator {
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-size: var(--label-size);
+  color: var(--text-primary);
+  letter-spacing: 0.12em;
+}
+
+.footer-label {
+  font-size: var(--label-size);
+  color: var(--text-muted);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/* Main body of a slide (between header + footer) */
+.slide-body {
+  flex: 1;
+  overflow: hidden;
+  position: relative; z-index: 1;
+  display: flex;
+}
+
+/* Section kicker label */
+.kicker {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--label-size);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: clamp(0.5rem,1.2vw,1.2rem);
+}
+
+/* Accent horizontal rule */
+.h-rule {
+  width: clamp(30px,5vw,60px);
+  height: 3px;
+  background: var(--accent);
+  margin: clamp(0.6rem,1.2vw,1.2rem) 0;
+}
+
+/* Typography */
+.slide-title {
+  font-family: var(--font-display);
+  font-size: var(--title-size);
+  font-weight: 900;
+  color: var(--text-primary);
+  line-height: 0.95;
+  letter-spacing: -0.04em;
+  text-transform: uppercase;
+}
+.slide-title .red { color: var(--accent); }
+
+.slide-h2 {
+  font-family: var(--font-display);
+  font-size: var(--h2-size);
+  font-weight: 800;
+  color: var(--text-primary);
+  line-height: 1.1;
+  letter-spacing: -0.025em;
+  text-transform: uppercase;
+}
+
+.body-text {
+  font-size: var(--body-size);
+  color: var(--text-light);
+  line-height: 1.65;
+  font-weight: 400;
+}
+
+/* Bullet list Swiss style */
+.sw-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--element-gap);
+}
+.sw-list li {
+  font-size: var(--body-size);
+  color: var(--text-light);
+  line-height: 1.5;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+.sw-list li::before {
+  content: '—';
+  font-family: var(--font-display);
+  font-weight: 900;
+  color: var(--accent);
+  flex-shrink: 0;
+  margin-top: 0.05em;
+}
+
+/* Highlighted box */
+.highlight-box {
+  border-left: 4px solid var(--accent);
+  padding: clamp(0.6rem,1.2vw,1.2rem) clamp(0.8rem,1.5vw,1.5rem);
+  background: var(--accent-pale);
+}
+.highlight-box p {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--body-size);
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+
+/* Architecture flow diagram */
+.flow-diagram {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  font-family: var(--font-display);
+}
+.flow-item {
+  display: flex;
+  align-items: center;
+  gap: clamp(0.5rem,1vw,1rem);
+}
+.flow-box {
+  font-size: var(--body-size);
+  font-weight: 700;
+  padding: clamp(0.3rem,0.7vw,0.7rem) clamp(0.6rem,1.3vw,1.3rem);
+  background: var(--bg-dark);
+  color: #fff;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.flow-box.accent-box {
+  background: var(--accent);
+  color: #fff;
+}
+.flow-box.light-box {
+  background: var(--bg-light);
+  color: var(--text-primary);
+  border: 2px solid var(--border-strong);
+}
+.flow-arrow {
+  font-size: var(--body-size);
+  color: var(--text-muted);
+  font-weight: 900;
+  padding: clamp(0.15rem,0.4vw,0.4rem) 0;
+  margin-left: clamp(0.6rem,1.3vw,1.3rem);
+}
+.flow-desc {
+  font-family: var(--font-body);
+  font-size: var(--small-size);
+  color: var(--text-muted);
+  margin-left: 0;
+}
+
+/* Two-column layout */
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  height: 100%;
+}
+.col {
+  padding: var(--slide-padding);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  overflow: hidden;
+}
+.col + .col {
+  border-left: 2px solid var(--border-strong);
+  background: var(--bg-light);
+}
+
+/* Single-column full-pad */
+.one-col {
+  padding: var(--slide-padding);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  overflow: hidden;
+  width: 100%;
+  height: 100%;
+}
+
+/* Three-column grid */
+.three-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 0;
+  height: 100%;
+}
+.three-col .col + .col {
+  border-left: 2px solid var(--border-strong);
+  background: var(--bg-light);
+}
+.three-col .col:last-child {
+  background: var(--bg-dark);
+  color: #fff;
+}
+.three-col .col:last-child .slide-h2 { color: #fff; }
+.three-col .col:last-child .sw-list li { color: rgba(255,255,255,0.75); }
+.three-col .col:last-child .sw-list li::before { color: var(--accent); }
+.three-col .col:last-child .body-text { color: rgba(255,255,255,0.6); }
+
+/* Tag / badge */
+.badge {
+  display: inline-block;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: var(--label-size);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 0.25rem 0.7rem;
+  border: 2px solid var(--text-primary);
+  color: var(--text-primary);
+  margin-bottom: clamp(0.6rem,1.2vw,1.2rem);
+}
+.badge.red {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* Step number */
+.step-num {
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-size: clamp(2rem,6vw,6rem);
+  color: rgba(10,10,10,0.06);
+  line-height: 1;
+  letter-spacing: -0.05em;
+  margin-bottom: -0.2em;
+}
+
+/* Code-style monospace block */
+.code-block {
+  font-family: 'Courier New', monospace;
+  font-size: clamp(0.6rem,1.1vw,0.9rem);
+  background: var(--bg-dark);
+  color: #a8f0a8;
+  padding: clamp(0.6rem,1.2vw,1.2rem) clamp(0.8rem,1.5vw,1.5rem);
+  border-left: 4px solid var(--accent);
+  line-height: 1.7;
+  overflow: hidden;
+}
+.code-block .comment { color: rgba(168,240,168,0.4); }
+.code-block .keyword { color: #ff8080; }
+.code-block .string  { color: #ffcc80; }
+
+/* ===========================================
+   ANIMATIONS — Professional / Editorial style
+   =========================================== */
+.reveal {
+  opacity: 0;
+  transform: translateY(18px);
+  transition: opacity 0.55s var(--ease-out-expo),
+              transform 0.55s var(--ease-out-expo);
+}
+.slide.visible .reveal { opacity: 1; transform: translateY(0); }
+.slide.visible .reveal:nth-child(1) { transition-delay: 0.05s; }
+.slide.visible .reveal:nth-child(2) { transition-delay: 0.15s; }
+.slide.visible .reveal:nth-child(3) { transition-delay: 0.25s; }
+.slide.visible .reveal:nth-child(4) { transition-delay: 0.35s; }
+.slide.visible .reveal:nth-child(5) { transition-delay: 0.42s; }
+.slide.visible .reveal:nth-child(6) { transition-delay: 0.48s; }
+
+.reveal-left {
+  opacity: 0;
+  transform: translateX(-24px);
+  transition: opacity 0.55s var(--ease-out-expo),
+              transform 0.55s var(--ease-out-expo);
+}
+.slide.visible .reveal-left { opacity: 1; transform: translateX(0); }
+.slide.visible .reveal-left:nth-child(1) { transition-delay: 0.05s; }
+.slide.visible .reveal-left:nth-child(2) { transition-delay: 0.15s; }
+.slide.visible .reveal-left:nth-child(3) { transition-delay: 0.25s; }
+.slide.visible .reveal-left:nth-child(4) { transition-delay: 0.35s; }
+.slide.visible .reveal-left:nth-child(5) { transition-delay: 0.42s; }
+
+/* Progress bar */
+.progress-bar {
+  position: fixed;
+  top: 0; left: 0;
+  height: 3px;
+  background: var(--accent);
+  z-index: 9999;
+  width: 0%;
+  transition: width 0.3s ease;
+}
+
+/* Nav dots */
+.nav-dots {
+  position: fixed;
+  right: clamp(0.8rem,1.5vw,1.5rem);
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  z-index: 1000;
+}
+.nav-dot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: rgba(10,10,10,0.2);
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+.nav-dot.active {
+  background: var(--accent);
+  height: 18px;
+  border-radius: 3px;
+}
+.nav-dot:hover { background: rgba(10,10,10,0.5); }
+.nav-dot.active:hover { background: var(--accent); }
+
+/* ===========================================
+   INLINE EDITOR — user requested this
+   =========================================== */
+.edit-hotzone {
+  position: fixed; top: 0; left: 0;
+  width: 80px; height: 80px;
+  z-index: 10000;
+  cursor: pointer;
+}
+
+.edit-toggle {
+  position: fixed; top: 16px; left: 16px;
+  z-index: 10001;
+  background: var(--bg-dark);
+  color: #fff;
+  border: none;
+  padding: 0.4rem 0.8rem;
+  font-family: var(--font-display);
+  font-size: var(--label-size);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+.edit-toggle.show,
+.edit-toggle.active { opacity: 1; pointer-events: auto; }
+.edit-toggle.active { background: var(--accent); }
+
+[contenteditable="true"] {
+  outline: 2px dashed var(--accent);
+  outline-offset: 3px;
+  cursor: text;
+}
+
+.edit-save-btn {
+  position: fixed;
+  bottom: 20px; right: 20px;
+  z-index: 10001;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  padding: 0.5rem 1.2rem;
+  font-family: var(--font-display);
+  font-size: var(--label-size);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  display: none;
+}
+.edit-save-btn.show { display: block; }
+
+/* ===========================================
+   SLIDE 1 — TITLE
+   =========================================== */
+#slide-1 .slide-body {
+  display: grid;
+  grid-template-columns: 1fr clamp(180px,28vw,320px);
+}
+#slide-1 .title-zone {
+  padding: var(--slide-padding);
+  display: flex; flex-direction: column; justify-content: center;
+  border-right: 2px solid var(--border-strong);
+  overflow: hidden;
+}
+#slide-1 .info-zone {
+  padding: var(--slide-padding);
+  display: flex; flex-direction: column; justify-content: center;
+  gap: var(--content-gap);
+  background: var(--bg-light);
+}
+#slide-1 .info-row { }
+#slide-1 .info-label {
+  font-size: var(--label-size);
+  letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 0.3rem;
+}
+#slide-1 .info-val {
+  font-family: var(--font-display);
+  font-size: var(--body-size);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+#slide-1 .i-rule { height: 1px; background: var(--border); }
+
+/* ===========================================
+   SLIDE 5 — WHAT MCP ENABLES (dark accent slide)
+   =========================================== */
+#slide-5 {
+  background: var(--bg-dark);
+}
+#slide-5::before {
+  background-image:
+    linear-gradient(rgba(255,51,0,0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,51,0,0.08) 1px, transparent 1px);
+}
+#slide-5 .slide-header {
+  background: var(--bg-dark);
+  border-bottom-color: rgba(255,255,255,0.1);
+}
+#slide-5 .slide-footer {
+  background: var(--bg-dark);
+  border-top-color: rgba(255,255,255,0.1);
+}
+#slide-5 .brand-text, #slide-5 .header-right,
+#slide-5 .page-indicator, #slide-5 .footer-label { color: rgba(255,255,255,0.4); }
+#slide-5 .brand-square { background: var(--accent); }
+#slide-5 .slide-h2, #slide-5 .kicker { color: #fff; }
+#slide-5 .kicker { color: var(--accent); }
+#slide-5 .sw-list li { color: rgba(255,255,255,0.7); }
+#slide-5 .sw-list li::before { color: var(--accent); }
+#slide-5 .body-text { color: rgba(255,255,255,0.55); }
+#slide-5 .col + .col { background: rgba(255,255,255,0.03); border-left-color: rgba(255,255,255,0.1); }
+#slide-5 .highlight-box {
+  background: rgba(255,51,0,0.15);
+  border-left-color: var(--accent);
+}
+#slide-5 .highlight-box p { color: #fff; }
+#slide-5 .nav-dot { background: rgba(255,255,255,0.2); }
+
+  /* ===========================================
+    SLIDE 11 — KEY TAKEAWAYS (dark accent)
+    =========================================== */
+ #slide-11 { background: var(--bg-dark); }
+ #slide-11::before {
+   background-image:
+     linear-gradient(rgba(255,51,0,0.08) 1px, transparent 1px),
+     linear-gradient(90deg, rgba(255,51,0,0.08) 1px, transparent 1px);
+ }
+ #slide-11 .slide-header { background: var(--bg-dark); border-bottom-color: rgba(255,255,255,0.1); }
+ #slide-11 .slide-footer { background: var(--bg-dark); border-top-color: rgba(255,255,255,0.1); }
+ #slide-11 .brand-text, #slide-11 .header-right,
+ #slide-11 .page-indicator, #slide-11 .footer-label { color: rgba(255,255,255,0.4); }
+ #slide-11 .brand-square { background: var(--accent); }
+ #slide-11 .slide-h2 { color: #fff; }
+ #slide-11 .kicker { color: var(--accent); }
+ #slide-11 .body-text { color: rgba(255,255,255,0.55); }
+ #slide-11 .sw-list li { color: rgba(255,255,255,0.75); }
+ #slide-11 .sw-list li::before { color: var(--accent); }
+ #slide-11 .col + .col { background: rgba(255,255,255,0.03); border-left-color: rgba(255,255,255,0.1); }
+ 
+ /* ===========================================
+    SLIDE 13 — CONCLUSION (full accent)
+    =========================================== */
+ #slide-13 { background: var(--accent); }
+ #slide-13::before { display: none; }
+ #slide-13 .slide-header { background: rgba(0,0,0,0.15); border-bottom-color: rgba(0,0,0,0.2); }
+ #slide-13 .slide-footer { background: rgba(0,0,0,0.15); border-top-color: rgba(0,0,0,0.2); }
+ #slide-13 .brand-text, #slide-13 .header-right,
+ #slide-13 .page-indicator, #slide-13 .footer-label { color: rgba(255,255,255,0.65); }
+ #slide-13 .brand-square { background: #fff; }
+ #slide-13 .kicker { color: rgba(255,255,255,0.7); }
+ #slide-13 .slide-title { color: #fff; }
+ #slide-13 .body-text { color: rgba(255,255,255,0.8); }
+ #slide-13 .one-col { justify-content: center; }
+</style>
+</head>
+<body>
+
+<!-- Progress bar -->
+<div class="progress-bar" id="progressBar"></div>
+
+<!-- Nav dots (populated by JS) -->
+<nav class="nav-dots" id="navDots" aria-label="Slide navigation"></nav>
+
+<!-- Inline editor controls -->
+<div class="edit-hotzone" id="editHotzone"></div>
+<button class="edit-toggle" id="editToggle">✏ Edit</button>
+<button class="edit-save-btn" id="editSaveBtn">⬇ Export HTML</button>
+
+<!-- ============================================================
+     SLIDE 1 — TITLE
+     ============================================================ -->
+<section class="slide" id="slide-1" aria-label="Title slide">
+  <div class="slide-header">
+    <div class="brand">
+      <div class="brand-square"></div>
+      <div class="brand-text">MCP Project</div>
+    </div>
+    <div class="header-right">Internal Presentation</div>
+  </div>
+
+  <div class="slide-body">
+    <div class="title-zone">
+      <div class="kicker reveal">Model Context Protocol</div>
+      <h1 class="slide-title reveal">
+        Implementing<br>
+        an <span class="red">MCP</span><br>
+        Server
+      </h1>
+      <div class="h-rule reveal"></div>
+      <p class="body-text reveal">
+        How AI systems interact with real software tools — architecture, protocol design, and a live implementation inside a procedural map generation engine.
+      </p>
+    </div>
+
+    <div class="info-zone">
+      <div class="info-row reveal">
+        <div class="info-label">Presenter</div>
+        <div class="info-val">NIKHIL PATEL</div>
+      </div>
+      <div class="i-rule reveal"></div>
+      <div class="info-row reveal">
+        <div class="info-label">Course / Project</div>
+        <div class="info-val">CMPM118 / FINAL PROJECT</div>
+      </div>
+      <div class="i-rule reveal"></div>
+      <div class="info-row reveal">
+        <div class="info-label">Date</div>
+        <div class="info-val">MARCH 12TH, 2024</div>
+      </div>
+      <div class="i-rule reveal"></div>
+      <div class="info-row reveal">
+        <div class="info-label">Slides</div>
+        <div class="info-val">13 total</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="slide-footer">
+    <div class="page-indicator">01 / 13</div>
+    <div class="footer-label">AI Tool Integration</div>
+  </div>
+</section>
+
+<!-- ============================================================
+     SLIDE 2 — THE PROBLEM WITH AI SYSTEMS
+     ============================================================ -->
+<section class="slide" id="slide-2" aria-label="The problem with AI systems">
+  <div class="slide-header">
+    <div class="brand"><div class="brand-square"></div><div class="brand-text">MCP Project</div></div>
+    <div class="header-right">Background</div>
+  </div>
+
+  <div class="slide-body">
+    <div class="two-col">
+      <div class="col">
+        <div class="kicker reveal">The Problem</div>
+        <h2 class="slide-h2 reveal">AI Models<br>Can't Act</h2>
+        <div class="h-rule reveal"></div>
+        <p class="body-text reveal">Modern AI models are powerful reasoning systems — but they do not naturally interact with real software environments.</p>
+        <div class="highlight-box reveal" style="margin-top: var(--content-gap);">
+          <p>They generate text. They cannot <em>do</em> things.</p>
+        </div>
+      </div>
+      <div class="col">
+        <div class="badge reveal">Without MCP</div>
+        <p class="body-text reveal" style="margin-bottom: var(--content-gap);">Most models cannot directly:</p>
+        <ul class="sw-list reveal">
+          <li>Query databases</li>
+          <li>Inspect application state</li>
+          <li>Trigger backend operations</li>
+          <li>Interact with live systems</li>
+        </ul>
+        <div style="margin-top: var(--content-gap);">
+          <div class="badge reveal">Traditional solutions</div>
+          <ul class="sw-list reveal">
+            <li>Tightly coupled, one-off APIs</li>
+            <li>Inconsistent interfaces per system</li>
+            <li>Difficult to scale or reuse</li>
+            <li>Repeated engineering work</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="slide-footer">
+    <div class="page-indicator">02 / 13</div>
+    <div class="footer-label">The Problem</div>
+  </div>
+</section>
+
+<!-- ============================================================
+     SLIDE 3 — WHAT IS MCP
+     ============================================================ -->
+<section class="slide" id="slide-3" aria-label="What is MCP">
+  <div class="slide-header">
+    <div class="brand"><div class="brand-square"></div><div class="brand-text">MCP Project</div></div>
+    <div class="header-right">Protocol</div>
+  </div>
+
+  <div class="slide-body">
+    <div class="two-col">
+      <div class="col">
+        <div class="kicker reveal">Definition</div>
+        <h2 class="slide-h2 reveal">Model Context<br>Protocol</h2>
+        <div class="h-rule reveal"></div>
+        <p class="body-text reveal">MCP is a protocol that allows AI models to interact with external tools and services through a <strong>standardized interface</strong>.</p>
+        <p class="body-text reveal" style="margin-top: var(--element-gap);">Instead of the AI directly calling APIs, the model communicates with an MCP server — which exposes system capabilities as structured, callable tools.</p>
+      </div>
+      <div class="col">
+        <div class="kicker reveal">Core Concept</div>
+        <div class="highlight-box reveal" style="margin-bottom: var(--content-gap);">
+          <p>MCP acts as a bridge between AI reasoning and real software capabilities.</p>
+        </div>
+        <ul class="sw-list reveal">
+          <li>AI speaks MCP — not raw APIs</li>
+          <li>Tools are described, typed, and structured</li>
+          <li>Server handles execution safely</li>
+          <li>Same protocol works across all tools</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="slide-footer">
+    <div class="page-indicator">03 / 13</div>
+    <div class="footer-label">What is MCP</div>
+  </div>
+</section>
+
+<!-- ============================================================
+     SLIDE 4 — MCP ARCHITECTURE
+     ============================================================ -->
+<section class="slide" id="slide-4" aria-label="MCP Architecture">
+  <div class="slide-header">
+    <div class="brand"><div class="brand-square"></div><div class="brand-text">MCP Project</div></div>
+    <div class="header-right">Architecture</div>
+  </div>
+
+  <div class="slide-body">
+    <div class="two-col">
+      <div class="col">
+        <div class="kicker reveal">System Design</div>
+        <h2 class="slide-h2 reveal">Three<br>Components</h2>
+        <div class="h-rule reveal"></div>
+        <p class="body-text reveal" style="margin-bottom: var(--content-gap);">An MCP system is built around three distinct layers, each with a specific responsibility.</p>
+        <div class="flow-diagram reveal">
+          <div class="flow-item"><div class="flow-box">AI Model</div></div>
+          <div class="flow-arrow">↓</div>
+          <div class="flow-item"><div class="flow-box accent-box">MCP Client</div></div>
+          <div class="flow-arrow">↓</div>
+          <div class="flow-item"><div class="flow-box">MCP Server</div></div>
+          <div class="flow-arrow">↓</div>
+          <div class="flow-item"><div class="flow-box light-box">External System / Tools</div></div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="kicker reveal">Layer Responsibilities</div>
+        <div style="display: flex; flex-direction: column; gap: var(--content-gap);">
+          <div class="reveal">
+            <div class="badge">AI Model</div>
+            <p class="body-text">Decides which actions are needed based on its reasoning.</p>
+          </div>
+          <div class="reveal">
+            <div class="badge">MCP Client</div>
+            <p class="body-text">Translates the model's request into MCP protocol messages.</p>
+          </div>
+          <div class="reveal">
+            <div class="badge red">MCP Server</div>
+            <p class="body-text">Exposes tools and executes operations — the control layer that safely connects AI decisions to real system actions.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="slide-footer">
+    <div class="page-indicator">04 / 13</div>
+    <div class="footer-label">Architecture</div>
+  </div>
+</section>
+
+<!-- ============================================================
+     SLIDE 5 — WHAT MCP ENABLES (dark slide)
+     ============================================================ -->
+<section class="slide" id="slide-5" aria-label="What MCP enables">
+  <div class="slide-header">
+    <div class="brand"><div class="brand-square"></div><div class="brand-text">MCP Project</div></div>
+    <div class="header-right">Capabilities</div>
+  </div>
+
+  <div class="slide-body">
+    <div class="two-col">
+      <div class="col">
+        <div class="kicker reveal">What It Enables</div>
+        <h2 class="slide-h2 reveal" style="color:#fff;">From Passive<br>to Active</h2>
+        <div class="h-rule reveal"></div>
+        <p class="body-text reveal">By exposing tools through MCP, AI systems can perform real actions — not generate guesses about them.</p>
+        <div class="highlight-box reveal" style="margin-top: var(--content-gap);">
+          <p>AI systems move from passive assistants to active software agents.</p>
+        </div>
+      </div>
+      <div class="col">
+        <div class="kicker reveal">Actions now possible</div>
+        <ul class="sw-list reveal">
+          <li>Query databases directly</li>
+          <li>Retrieve structured data</li>
+          <li>Analyze live environment state</li>
+          <li>Run computations on real data</li>
+          <li>Trigger workflows and operations</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="slide-footer">
+    <div class="page-indicator">05 / 13</div>
+    <div class="footer-label">What MCP Enables</div>
+  </div>
+</section>
+
+<!-- ============================================================
+     SLIDE 6 — WHY I IMPLEMENTED AN MCP SERVER
+     ============================================================ -->
+<section class="slide" id="slide-6" aria-label="Why I implemented an MCP server">
+  <div class="slide-header">
+    <div class="brand"><div class="brand-square"></div><div class="brand-text">MCP Project</div></div>
+    <div class="header-right">Motivation</div>
+  </div>
+
+  <div class="slide-body">
+    <div class="two-col">
+      <div class="col">
+        <div class="kicker reveal">Project Motivation</div>
+        <h2 class="slide-h2 reveal">MCP in<br>Practice</h2>
+        <div class="h-rule reveal"></div>
+        <p class="body-text reveal">To understand MCP in practice, I integrated an MCP server into an existing project: a <strong>procedural map generation engine</strong>.</p>
+        <div class="highlight-box reveal" style="margin-top: var(--content-gap);">
+          <p>Goal: Allow an AI agent to inspect, analyze, and modify the map using MCP tools.</p>
+        </div>
+      </div>
+      <div class="col">
+        <div class="kicker reveal">Why this system?</div>
+        <p class="body-text reveal" style="margin-bottom: var(--content-gap);">The map engine already contained rich internal state — making it a strong test environment:</p>
+        <ul class="sw-list reveal">
+          <li>Spatial rules and constraints</li>
+          <li>Structured tile data</li>
+          <li>Generation algorithms</li>
+          <li>Analytics and generation history</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="slide-footer">
+    <div class="page-indicator">06 / 13</div>
+    <div class="footer-label">Project Motivation</div>
+  </div>
+</section>
+
+<!-- ============================================================
+     SLIDE 7 — SYSTEM ARCHITECTURE
+     ============================================================ -->
+<section class="slide" id="slide-7" aria-label="System architecture">
+  <div class="slide-header">
+    <div class="brand"><div class="brand-square"></div><div class="brand-text">MCP Project</div></div>
+    <div class="header-right">System Design</div>
+  </div>
+
+  <div class="slide-body">
+    <div class="two-col">
+      <div class="col">
+        <div class="kicker reveal">My Project</div>
+        <h2 class="slide-h2 reveal">Three-Layer<br>Architecture</h2>
+        <div class="h-rule reveal"></div>
+        <div class="flow-diagram reveal">
+          <div class="flow-item"><div class="flow-box light-box">AI Agent</div></div>
+          <div class="flow-arrow">↓</div>
+          <div class="flow-item"><div class="flow-box light-box">MCP Client</div></div>
+          <div class="flow-arrow">↓</div>
+          <div class="flow-item"><div class="flow-box accent-box">MCP Server — pewter_mcp.py</div></div>
+          <div class="flow-arrow">↓</div>
+          <div class="flow-item"><div class="flow-box">Generation Engine</div></div>
+          <div class="flow-arrow">↓</div>
+          <div class="flow-item"><div class="flow-box">Database &amp; Map State</div></div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="kicker reveal">Key Files</div>
+        <div style="display: flex; flex-direction: column; gap: var(--content-gap);">
+          <div class="reveal">
+            <div class="badge">Frontend Interface</div>
+            <p class="body-text">Displays the map and allows manual interaction.</p>
+          </div>
+          <div class="reveal">
+            <div class="badge">Generation Engine</div>
+            <div class="code-block" style="margin-top: 0.4rem;">
+              <span class="comment"># Core modules</span><br>
+              pewter_generator.py<br>
+              pewter_rules.py<br>
+              pewter_analytics.py
+            </div>
+          </div>
+          <div class="reveal">
+            <div class="badge red">MCP Server</div>
+            <div class="code-block" style="margin-top: 0.4rem;">pewter_mcp.py</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="slide-footer">
+    <div class="page-indicator">07 / 13</div>
+    <div class="footer-label">System Architecture</div>
+  </div>
+</section>
+
+<!-- ============================================================
+     SLIDE 8 — TOOLS IMPLEMENTED (split across 2 slides: 8a + 8b)
+     ============================================================ -->
+<section class="slide" id="slide-8" aria-label="MCP tools part 1">
+  <div class="slide-header">
+    <div class="brand"><div class="brand-square"></div><div class="brand-text">MCP Project</div></div>
+    <div class="header-right">Implementation</div>
+  </div>
+
+  <div class="slide-body">
+    <div class="two-col">
+      <div class="col">
+        <div class="kicker reveal">Tools — 1 of 2</div>
+        <h2 class="slide-h2 reveal">Exposed<br>Capabilities</h2>
+        <div class="h-rule reveal"></div>
+        <p class="body-text reveal">The MCP server exposes five tools. Each connects directly to the internal engine. Here are the first two.</p>
+      </div>
+      <div class="col">
+        <div style="display: flex; flex-direction: column; gap: var(--content-gap);">
+          <div class="reveal">
+            <div class="badge red">Map Inspection Tool</div>
+            <p class="body-text">Allows the AI to read the current map state. The AI can request tiles in a region to understand the environment — retrieved directly from the database.</p>
+          </div>
+          <div class="reveal">
+            <div class="badge red">Tile Information Tool</div>
+            <p class="body-text">Provides terrain type definitions and tile rules. The AI can ask what rules apply to specific tiles — forests, mountains, water — to reason about world structure.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="slide-footer">
+    <div class="page-indicator">08 / 13</div>
+    <div class="footer-label">MCP Tools (1/2)</div>
+  </div>
+</section>
+
+<!-- ============================================================
+     SLIDE 9 — TOOLS IMPLEMENTED part 2
+     ============================================================ -->
+<section class="slide" id="slide-9" aria-label="MCP tools part 2">
+  <div class="slide-header">
+    <div class="brand"><div class="brand-square"></div><div class="brand-text">MCP Project</div></div>
+    <div class="header-right">Implementation</div>
+  </div>
+
+  <div class="slide-body">
+    <div class="two-col">
+      <div class="col">
+        <div class="kicker reveal">Tools — 2 of 2</div>
+        <h2 class="slide-h2 reveal">Remaining<br>Tools</h2>
+        <div class="h-rule reveal"></div>
+        <div class="reveal">
+          <div class="badge red">Region Generation Tool</div>
+          <p class="body-text">Triggers the map generation algorithm — calling <code style="font-family:monospace; color:var(--accent);">pewter_generator.py</code> which runs the layered prompting algorithm to produce valid terrain.</p>
+        </div>
+      </div>
+      <div class="col">
+        <div style="display: flex; flex-direction: column; gap: var(--content-gap);">
+          <div class="reveal">
+            <div class="badge red">Map Validation Tool</div>
+            <p class="body-text">Checks whether generated map violates spatial rules using <code style="font-family:monospace; color:var(--accent);">pewter_rules.py</code>: tile connectivity, adjacency constraints, overlap prevention.</p>
+          </div>
+          <div class="reveal">
+            <div class="badge red">Generation History Tool</div>
+            <p class="body-text">Reads generation logs from the SQLite database. Allows the AI to inspect previous map states, generation decisions, and analytics for more informed reasoning.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="slide-footer">
+    <div class="page-indicator">09 / 13</div>
+    <div class="footer-label">MCP Tools (2/2)</div>
+  </div>
+</section>
+
+<!-- ============================================================
+     SLIDE 10 — EXAMPLE INTERACTION
+     ============================================================ -->
+<section class="slide" id="slide-10" aria-label="Example interaction">
+  <div class="slide-header">
+    <div class="brand"><div class="brand-square"></div><div class="brand-text">MCP Project</div></div>
+    <div class="header-right">Example</div>
+  </div>
+
+  <div class="slide-body">
+    <div class="two-col">
+      <div class="col">
+        <div class="kicker reveal">Example Interaction</div>
+        <h2 class="slide-h2 reveal">Forest Region<br>Generation</h2>
+        <div class="h-rule reveal"></div>
+        <div class="code-block reveal">
+          <span class="comment"># Prompt to the AI agent</span><br>
+          <span class="string">"Generate a forest region<br>&nbsp;near this location."</span>
+        </div>
+        <p class="body-text reveal" style="margin-top: var(--content-gap);">This single instruction triggers a full MCP interaction cycle — the AI does not guess what terrain to generate, it <em>acts</em> on the real system.</p>
+      </div>
+      <div class="col">
+        <div class="kicker reveal">What happens</div>
+        <ul class="sw-list reveal">
+          <li>AI reads map state via inspection tool</li>
+          <li>Selects the region generation tool</li>
+          <li>MCP server executes the generator</li>
+          <li>Layered prompting produces valid terrain</li>
+          <li>New tiles written to the database</li>
+          <li>Frontend map updates in real time</li>
+        </ul>
+        <div class="highlight-box reveal" style="margin-top: var(--content-gap);">
+          <p>The AI actively interacts with the system — not just producing text responses.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="slide-footer">
+    <div class="page-indicator">10 / 13</div>
+    <div class="footer-label">Example Interaction</div>
+  </div>
+</section>
+
+<!-- ============================================================
+     SLIDE 11 — KEY TAKEAWAYS (dark)
+     ============================================================ -->
+<section class="slide" id="slide-11" aria-label="Key takeaways">
+  <div class="slide-header">
+    <div class="brand"><div class="brand-square"></div><div class="brand-text">MCP Project</div></div>
+    <div class="header-right">Summary</div>
+  </div>
+
+  <div class="slide-body">
+    <div class="two-col">
+      <div class="col">
+        <div class="kicker reveal">Key Takeaways</div>
+        <h2 class="slide-h2 reveal">What MCP<br>Delivers</h2>
+        <div class="h-rule reveal"></div>
+        <p class="body-text reveal">Implementing an MCP server demonstrated clear structural and practical advantages over traditional AI-to-tool integration approaches.</p>
+      </div>
+      <div class="col">
+        <div class="kicker reveal">Advantages</div>
+        <ul class="sw-list reveal">
+          <li>Standardized interface between AI and tools</li>
+          <li>Structured, typed tool access for agents</li>
+          <li>Clean separation of reasoning and execution</li>
+          <li>Scalable integration architecture</li>
+        </ul>
+        <div class="highlight-box reveal" style="margin-top: var(--content-gap);">
+          <p style="color: #ffffff;">AI systems can interact with complex software environments in a controlled and extensible way.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="slide-footer">
+    <div class="page-indicator">11 / 13</div>
+    <div class="footer-label">Key Takeaways</div>
+  </div>
+</section>
+
+<!-- ============================================================
+     SLIDE 12 — FUTURE WORK
+     ============================================================ -->
+<section class="slide" id="slide-12" aria-label="Future work">
+  <div class="slide-header">
+    <div class="brand"><div class="brand-square"></div><div class="brand-text">MCP Project</div></div>
+    <div class="header-right">Future Work</div>
+  </div>
+
+  <div class="slide-body">
+    <div class="two-col">
+      <div class="col">
+        <div class="kicker reveal">Looking Ahead</div>
+        <h2 class="slide-h2 reveal">Future<br>Directions</h2>
+        <div class="h-rule reveal"></div>
+        <p class="body-text reveal">This implementation demonstrates the core MCP pattern. Several extensions would further validate and expand its capabilities.</p>
+      </div>
+      <div class="col">
+        <div class="kicker reveal">Possible improvements</div>
+        <ul class="sw-list reveal">
+          <li>Additional MCP tools for finer-grained map control</li>
+          <li>Expanded analytics capabilities and richer history</li>
+          <li>Multi-agent interactions over shared map state</li>
+          <li>Improved generation workflows and validation feedback</li>
+        </ul>
+        <div class="highlight-box reveal" style="margin-top: var(--content-gap);">
+          <p>These improvements would further demonstrate how MCP supports complex, AI-driven systems.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="slide-footer">
+    <div class="page-indicator">12 / 13</div>
+    <div class="footer-label">Future Work</div>
+  </div>
+</section>
+
+<!-- ============================================================
+     SLIDE 13 — CONCLUSION (full accent red)
+     ============================================================ -->
+<section class="slide" id="slide-13" aria-label="Conclusion">
+  <div class="slide-header">
+    <div class="brand"><div class="brand-square"></div><div class="brand-text">MCP Project</div></div>
+    <div class="header-right">Conclusion</div>
+  </div>
+
+  <div class="slide-body">
+    <div class="one-col" style="max-width: min(90vw, 800px); margin: 0 auto; align-items: flex-start; justify-content: center;">
+      <div class="kicker reveal" style="color:rgba(255,255,255,0.7);">Conclusion</div>
+      <h1 class="slide-title reveal" style="color:#fff; font-size: clamp(1.8rem,5.5vw,4.5rem);">
+        MCP Connects<br>AI to<br><span style="color:rgba(255,255,255,0.55);">YOU.</span>
+      </h1>
+      <div class="h-rule reveal" style="background: rgba(255,255,255,0.4);"></div>
+      <p class="body-text reveal" style="color:rgba(255,255,255,0.85); max-width: 600px; line-height: 1.7;">
+      </p>
+      <p class="body-text reveal" style="color:rgba(255,255,255,0.6); margin-top: var(--element-gap);">
+      .
+      </p>
+    </div>
+  </div>
+
+  <div class="slide-footer">
+    <div class="page-indicator">13 / 13</div>
+    <div class="footer-label">Thank You</div>
+  </div>
+</section>
+
+<!-- ===========================================
+     JAVASCRIPT — Slide Controller + Inline Editor
+     =========================================== -->
+<script>
+/* === SLIDE PRESENTATION CONTROLLER === */
+class SlidePresentation {
+  constructor() {
+    this.slides = Array.from(document.querySelectorAll('.slide'));
+    this.total = this.slides.length;
+    this.current = 0;
+    this.isScrolling = false;
+
+    this.progressBar = document.getElementById('progressBar');
+    this.navDotsContainer = document.getElementById('navDots');
+
+    this.buildNavDots();
+    this.setupIntersectionObserver();
+    this.setupKeyboard();
+    this.setupWheel();
+    this.setupTouch();
+  }
+
+  /* Build nav dots */
+  buildNavDots() {
+    this.slides.forEach((_, i) => {
+      const dot = document.createElement('button');
+      dot.className = 'nav-dot' + (i === 0 ? ' active' : '');
+      dot.setAttribute('aria-label', `Go to slide ${i + 1}`);
+      dot.addEventListener('click', () => this.goTo(i));
+      this.navDotsContainer.appendChild(dot);
+    });
+    this.dots = Array.from(this.navDotsContainer.querySelectorAll('.nav-dot'));
+  }
+
+  /* Intersection observer — adds .visible to trigger animations */
+  setupIntersectionObserver() {
+    const opts = { threshold: 0.5 };
+    const obs = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+          const idx = this.slides.indexOf(entry.target);
+          if (idx !== -1) this.onSlideChange(idx);
+        }
+      });
+    }, opts);
+    this.slides.forEach(s => obs.observe(s));
+  }
+
+  onSlideChange(idx) {
+    this.current = idx;
+    // Update progress bar
+    const pct = this.total > 1 ? (idx / (this.total - 1)) * 100 : 100;
+    if (this.progressBar) this.progressBar.style.width = pct + '%';
+    // Update nav dots
+    if (this.dots) {
+      this.dots.forEach((d, i) => d.classList.toggle('active', i === idx));
+    }
+  }
+
+  goTo(idx) {
+    if (idx < 0 || idx >= this.total) return;
+    this.slides[idx].scrollIntoView({ behavior: 'smooth' });
+  }
+
+  /* Keyboard navigation */
+  setupKeyboard() {
+    document.addEventListener('keydown', (e) => {
+      // Skip if editing text
+      if (document.activeElement && document.activeElement.getAttribute('contenteditable')) return;
+      if (e.key === 'ArrowDown' || e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') {
+        e.preventDefault(); this.goTo(this.current + 1);
+      } else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft' || e.key === 'PageUp') {
+        e.preventDefault(); this.goTo(this.current - 1);
+      } else if (e.key === 'Home') {
+        e.preventDefault(); this.goTo(0);
+      } else if (e.key === 'End') {
+        e.preventDefault(); this.goTo(this.total - 1);
+      }
+    });
+  }
+
+  /* Mouse wheel — debounced */
+  setupWheel() {
+    let lastWheel = 0;
+    document.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const now = Date.now();
+      if (now - lastWheel < 700) return;
+      lastWheel = now;
+      if (e.deltaY > 0) this.goTo(this.current + 1);
+      else this.goTo(this.current - 1);
+    }, { passive: false });
+  }
+
+  /* Touch / swipe */
+  setupTouch() {
+    let startY = 0;
+    document.addEventListener('touchstart', (e) => { startY = e.touches[0].clientY; }, { passive: true });
+    document.addEventListener('touchend', (e) => {
+      const diff = startY - e.changedTouches[0].clientY;
+      if (Math.abs(diff) > 50) {
+        if (diff > 0) this.goTo(this.current + 1);
+        else this.goTo(this.current - 1);
+      }
+    }, { passive: true });
+  }
+}
+
+const presentation = new SlidePresentation();
+
+/* === INLINE EDITOR === */
+class InlineEditor {
+  constructor() {
+    this.isActive = false;
+    this.toggle = document.getElementById('editToggle');
+    this.saveBtn = document.getElementById('editSaveBtn');
+    this.hotzone = document.getElementById('editHotzone');
+    this.hideTimeout = null;
+
+    this.setupHotzone();
+    this.setupKeyboard();
+    this.toggle.addEventListener('click', () => this.toggleEditMode());
+    this.saveBtn.addEventListener('click', () => this.exportHTML());
+
+    // Restore from localStorage if available
+    this.restoreEdits();
+  }
+
+  setupHotzone() {
+    this.hotzone.addEventListener('mouseenter', () => {
+      clearTimeout(this.hideTimeout);
+      this.toggle.classList.add('show');
+    });
+    this.hotzone.addEventListener('mouseleave', () => {
+      this.hideTimeout = setTimeout(() => {
+        if (!this.isActive) this.toggle.classList.remove('show');
+      }, 400);
+    });
+    this.toggle.addEventListener('mouseenter', () => clearTimeout(this.hideTimeout));
+    this.toggle.addEventListener('mouseleave', () => {
+      this.hideTimeout = setTimeout(() => {
+        if (!this.isActive) this.toggle.classList.remove('show');
+      }, 400);
+    });
+    this.hotzone.addEventListener('click', () => this.toggleEditMode());
+  }
+
+  setupKeyboard() {
+    document.addEventListener('keydown', (e) => {
+      if ((e.key === 'e' || e.key === 'E') && !e.target.getAttribute('contenteditable')) {
+        this.toggleEditMode();
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 's' && this.isActive) {
+        e.preventDefault(); this.saveEdits();
+      }
+    });
+  }
+
+  toggleEditMode() {
+    this.isActive = !this.isActive;
+    this.toggle.textContent = this.isActive ? '✓ Done' : '✏ Edit';
+    this.toggle.classList.toggle('active', this.isActive);
+    this.toggle.classList.add('show');
+    this.saveBtn.classList.toggle('show', this.isActive);
+
+    // Make text elements editable
+    const editables = document.querySelectorAll(
+      '.slide-title, .slide-h2, .body-text, .sw-list li, .highlight-box p, .kicker, .info-val, .badge, .footer-label, .header-right, .brand-text'
+    );
+    editables.forEach(el => {
+      el.contentEditable = this.isActive ? 'true' : 'false';
+    });
+
+    if (this.isActive) {
+      // Auto-save on input
+      document.addEventListener('input', this._autoSave = () => this.saveEdits());
+    } else {
+      document.removeEventListener('input', this._autoSave);
+      this.saveEdits();
+    }
+  }
+
+  saveEdits() {
+    const state = {};
+    document.querySelectorAll('[id]').forEach(el => {
+      const edits = {};
+      el.querySelectorAll('[contenteditable]').forEach((child, i) => {
+        edits[i] = child.innerHTML;
+      });
+      if (Object.keys(edits).length) state[el.id] = edits;
+    });
+    try { localStorage.setItem('mcp-slides-edits', JSON.stringify(state)); } catch(e) {}
+  }
+
+  restoreEdits() {
+    try {
+      const saved = localStorage.getItem('mcp-slides-edits');
+      if (!saved) return;
+      const state = JSON.parse(saved);
+      Object.keys(state).forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const children = el.querySelectorAll('[contenteditable], .slide-title, .slide-h2, .body-text, .sw-list li, .highlight-box p, .kicker, .info-val, .badge');
+        Object.keys(state[id]).forEach(i => {
+          if (children[i]) children[i].innerHTML = state[id][i];
+        });
+      });
+    } catch(e) {}
+  }
+
+  exportHTML() {
+    // Turn off contenteditable before export
+    document.querySelectorAll('[contenteditable="true"]').forEach(el => el.removeAttribute('contenteditable'));
+    const html = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+    const blob = new Blob([html], { type: 'text/html' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'mcp-presentation.html';
+    a.click();
+    URL.revokeObjectURL(a.href);
+    // Re-enable if still in edit mode
+    if (this.isActive) {
+      document.querySelectorAll('.slide-title, .slide-h2, .body-text, .sw-list li, .highlight-box p, .kicker, .info-val, .badge').forEach(el => {
+        el.contentEditable = 'true';
+      });
+    }
+  }
+}
+
+const editor = new InlineEditor();
+</script>
+</body>
+</html>
